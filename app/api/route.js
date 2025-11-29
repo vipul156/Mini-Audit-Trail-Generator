@@ -1,7 +1,9 @@
+// app/api/route.js
 import { NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import connectDB from '@/db/connectDB'
 import Version from '@/model/Version'
+
 
 
 function extractWords(text) {
@@ -26,7 +28,7 @@ function calculateDiff(previousContent, newContent) {
   const previousFreq = createFrequencyMap(previousWords)
   const newFreq = createFrequencyMap(newWords)
 
-
+  // Find added words (in new but not in previous, or increased frequency)
   const addedWords = []
   newFreq.forEach((count, word) => {
     const previousCount = previousFreq.get(word) || 0
@@ -36,6 +38,7 @@ function calculateDiff(previousContent, newContent) {
     }
   })
 
+  // Find removed words (in previous but not in new, or decreased frequency)
   const removedWords = []
   previousFreq.forEach((count, word) => {
     const newCount = newFreq.get(word) || 0
@@ -73,12 +76,14 @@ function generateSummary(diff) {
 
 export async function POST(request) {
   try {
-
+    // Connect to database
     await connectDB()
 
+    // Parse request body
     const body = await request.json()
     const { content } = body
 
+    // Validate input
     if (content === undefined || content === null) {
       return NextResponse.json(
         { error: 'Content is required' },
@@ -86,6 +91,7 @@ export async function POST(request) {
       )
     }
 
+    // Get the most recent version to compare
     const previousVersion = await Version
       .findOne()
       .sort({ timestamp: -1 })
@@ -94,13 +100,13 @@ export async function POST(request) {
 
     const previousContent = previousVersion?.content || ''
     
-
+    // Calculate diff using custom algorithm
     const diff = calculateDiff(previousContent, content)
     
-
+    // Generate summary
     const summary = generateSummary(diff)
 
-
+    // Create new version document
     const versionData = {
       id: uuidv4(),
       content: content,
@@ -112,10 +118,10 @@ export async function POST(request) {
       summary: summary
     }
 
-
+    // Save to database
     const savedVersion = await Version.create(versionData)
 
-
+    // Return response
     return NextResponse.json({
       id: savedVersion.id,
       content: savedVersion.content,
@@ -143,16 +149,16 @@ export async function POST(request) {
 
 export async function GET(request) {
   try {
-
+    // Connect to database
     await connectDB()
 
-
+    // Parse query parameters
     const { searchParams } = new URL(request.url)
     const limit = parseInt(searchParams.get('limit')) || 50
     const skip = parseInt(searchParams.get('skip')) || 0
     const sortOrder = searchParams.get('sort') === 'asc' ? 1 : -1
 
-
+    // Fetch versions from database
     const versions = await Version
       .find()
       .sort({ timestamp: sortOrder })
@@ -161,8 +167,10 @@ export async function GET(request) {
       .lean()
       .exec()
 
+    // Get total count for pagination
     const totalCount = await Version.countDocuments()
 
+    // Format response
     const formattedVersions = versions.map(version => ({
       id: version.id,
       content: version.content,
